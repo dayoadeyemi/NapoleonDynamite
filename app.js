@@ -122,6 +122,36 @@ function sr_unownedness(state){
           R.countBy(R.I)
   )(state.map.regions);
 }
+
+function region_dangers(state){
+  return R.pipe(
+    R.map(function(x){
+      return [x, [x[1], x[0]]];
+    }),
+    R.unnest,
+    R.reject(R.pipe(
+      R.prop(1),
+      get_owner(state),
+      R.eq(get_bot_name(state))
+    )),
+    R.groupBy(R.head),
+    R.mapObj(R.map(R.prop(1))),
+    R.mapObj(R.map(get_armies(state))),
+    R.mapObjIndexed(function(off_armies, region_id){
+      return R.sum(off_armies) - get_armies(state, region_id);
+    })
+  )(state.map.neighbors);
+}
+
+function get_armies_for_attack(state, xy){
+  return R.pipe(
+    R.map(get_armies(state)),
+    function(x){
+      if (x[1] < 0.7 * x[0]) return Math.floor(x[0]/0.7);
+      return 0;
+    }
+  )(xy);
+}
 function attack_transfer(state){
   return R.pipe(
     R.filter(R.compose(
@@ -136,7 +166,25 @@ function attack_transfer(state){
     }),
     R.mapObjIndexed(function(adj_list, type){
       if (type==='tranfer'){
-        return [];
+        var dangers = region_dangers(state);
+        var danger_diff = R.pipe(
+          R.map(R.flip(R.prop)(dangers)),
+          R.map(R.ifElse(R.isNil, R.always(0), R.I)),
+          R.apply(R.subtract)
+        );
+        return R.pipe(
+          R.map(function(srAdj){
+            return [srAdj, [srAdj[1], srAdj[0]]];
+          }),
+          R.unnest,
+          R.filter(R.pipe(
+            danger_diff,
+            R.gte(0)
+          )),
+          R.map(function(xy){
+            return R.concat(xy, [Math.floor(get_armies(state, xy[0])/2), 'b']);//[source_id, target_id, no_armies]
+          })
+        )(adj_list);
       }
       if (type==='attack'){
         return R.pipe(
@@ -159,23 +207,45 @@ function attack_transfer(state){
                 }),
                 R.toPairs,
                 R.map(function(xy){
-                  return R.concat(xy, [get_armies(state, xy[0])-1]);//[source_id, target_id, no_armies]
-                }),
-                R.reject(R.compose(R.eq(0), R.prop(2)))
+                  return R.concat(xy, [get_armies_for_attack(state, xy), 'a']);//[source_id, target_id, no_armies]
+                })
         )(adj_list);
       }
     }),
     R.values,
-    R.unnest
+    R.unnest,
+    R.sortBy(R.prop(3)),
+    R.slice(0,3),
+    R.reject(R.compose(R.eq(0), R.prop(2)))
   )(state.map.neighbors); //[[source_id, target_id, no_armies], ...]
 }
 
+function place_armies(state){
+  var unk = sr_unownedness(state);
+  var unknownness = R.compose(R.flip(R.prop)(unk), get_super_region(state));
+  return R.pipe(
+    R.mapObj(R.prop('super_region')),
+    R.mapObj(R.flip(R.prop)(unk)),
+    R.toPairs,
+    R.filter(R.compose(R.eq(get_bot_name(state)), get_owner(state), R.head)),
+    R.sort(function(x, y){
+      return x[1]- y[1];
+    }),
+    R.slice(0, 1),
+    R.map(function(x){
+      return [x[0], state.settings.starting_armies];
+    })
+  )(state.map.regions)
+}
+
 function go(go_command, state){
+  var moves;
   switch(go_command) {
     case 'place_armies':
-      return 'give me randomly';
+      moves = place_armies(state);
+      return R.join(', ', R.map(R.compose(R.join(' '), R.concat([state.settings.your_bot, 'place_armies'])), moves));
     case 'attack/transfer':
-      var moves = attack_transfer(state);
+      moves = attack_transfer(state);
       if (R.isEmpty(moves)) return 'No moves'
       return R.join(', ', R.map(R.compose(R.join(' '), R.concat([state.settings.your_bot, 'attack/transfer'])), moves));
     default:
