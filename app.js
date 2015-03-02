@@ -3,6 +3,15 @@ var _ = require('highland');
 var R = require('ramda');
 var M = require('./matrix');
 
+function tap(msg){
+  return function(x){
+    console.log('---'+msg+'---');
+    console.log(require('util').inspect(x, false, null, true));
+    console.log('---------');
+    return x;
+  }
+}
+
 var collect = R.curry(function(n, xs) {
   var i, _xs = [];
   for (i = 0; i * n < xs.length; i++) {
@@ -123,7 +132,7 @@ function sr_unownedness(state){
   )(state.map.regions);
 }
 
-function region_dangers(state){
+function region_neighbors(state){
   return R.pipe(
     R.map(function(x){
       return [x, [x[1], x[0]]];
@@ -135,19 +144,24 @@ function region_dangers(state){
       R.eq(get_bot_name(state))
     )),
     R.groupBy(R.head),
-    R.mapObj(R.map(R.prop(1))),
-    R.mapObj(R.map(get_armies(state))),
-    R.mapObjIndexed(function(off_armies, region_id){
-      return R.sum(off_armies) - get_armies(state, region_id);
-    })
+    R.mapObj(R.map(R.prop(1)))
   )(state.map.neighbors);
+}
+
+function region_dangers(state){
+  return R.pipe(
+    region_neighbors,
+    R.mapObj(R.map(get_armies(state))),
+    R.mapObj(R.map(R.ifElse(R.isNil, R.always(0), R.I))),
+    R.mapObj(R.sum)
+  )(state);
 }
 
 function get_armies_for_attack(state, xy){
   return R.pipe(
     R.map(get_armies(state)),
     function(x){
-      if (x[1] < 0.7 * x[0]) return Math.floor(x[0]/0.7);
+      if (x[1] < 0.7 * x[0]) return Math.floor(x[0]*0.7);
       return 0;
     }
   )(xy);
@@ -160,16 +174,16 @@ function attack_transfer(state){
     )),
     R.groupBy(function(xy){
       if (get_owner(state, xy[0])=== get_owner(state, xy[1])) {
-        return 'tranfer';
+        return 'transfer';
       }
       return 'attack';
     }),
+    tap('grouped moves options'),
     R.mapObjIndexed(function(adj_list, type){
-      if (type==='tranfer'){
+      if (type==='transfer'){
         var dangers = region_dangers(state);
         var danger_diff = R.pipe(
-          R.map(R.flip(R.prop)(dangers)),
-          R.map(R.ifElse(R.isNil, R.always(0), R.I)),
+          R.map(R.flip(R.prop)(dangers)), 
           R.apply(R.subtract)
         );
         return R.pipe(
@@ -182,7 +196,7 @@ function attack_transfer(state){
             R.gte(0)
           )),
           R.map(function(xy){
-            return R.concat(xy, [Math.floor(get_armies(state, xy[0])/2), 'b']);//[source_id, target_id, no_armies]
+            return R.concat(xy, [Math.floor(get_armies(state, xy[0])/2)]);//[source_id, target_id, no_armies]
           })
         )(adj_list);
       }
@@ -207,15 +221,13 @@ function attack_transfer(state){
                 }),
                 R.toPairs,
                 R.map(function(xy){
-                  return R.concat(xy, [get_armies_for_attack(state, xy), 'a']);//[source_id, target_id, no_armies]
+                  return R.concat(xy, [get_armies_for_attack(state, xy)]);//[source_id, target_id, no_armies]
                 })
         )(adj_list);
       }
     }),
     R.values,
     R.unnest,
-    R.sortBy(R.prop(3)),
-    R.slice(0,3),
     R.reject(R.compose(R.eq(0), R.prop(2)))
   )(state.map.neighbors); //[[source_id, target_id, no_armies], ...]
 }
@@ -262,7 +274,7 @@ _(process.stdin)
 .map(R.split('\n'))
 .flatten()
 .map(R.trim)
-//.doto(console.log)
+// .doto(console.log)
 .map(R.split(' '))
 .map(function(xs) {
   var command = R.head(xs);
@@ -290,7 +302,7 @@ _(process.stdin)
   };
 })
 .scan(initState, R.flip(R.call))
-//.map(R.path('map'))
+// .map(R.path('map'))
 .map(R.path('output'))
 .reject(R.isEmpty)
 .each(console.log);

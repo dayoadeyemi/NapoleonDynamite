@@ -1,0 +1,18 @@
+settings timebank 10000
+settings time_per_move 500
+settings max_rounds 60
+settings your_bot player1
+settings opponent_bot player2
+setup_map super_regions 1 5 2 2 3 4 4 1
+setup_map regions 1 1 2 1 3 1 4 1 5 1 6 1 7 1 8 2 9 2 10 2 11 2 12 3 13 4 14 3 15 3
+setup_map neighbors 1 4,2,8,9 2 3,4 3 4,5,6 4 6,10,9 5 6,7 6 10,12,7 7 12 8 9,11,10 9 10 10 12,13,11,14 11 14 12 15,13 13 14,15 14 15
+setup_map wastelands 11
+settings starting_regions 7 8 15
+settings starting_pick_amount 1
+pick_starting_region 10000 7 8 15
+setup_map opponent_starting_regions 15
+settings starting_armies 5
+update_map 15 player1 2 5 neutral 2 6 neutral 2 12 neutral 2 13 neutral 2 14 player1 5
+opponent_moves
+go place_armies 10000
+go attack/transfer 10000
