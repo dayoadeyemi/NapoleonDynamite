@@ -1,0 +1,28 @@
+{
+  "name": "NapoleonDynamite",
+  "version": "0.0.0",
+  "description": "Created with [Nodeclipse](https://github.com/Nodeclipse/nodeclipse-1)\r  ([Eclipse Marketplace](http://marketplace.eclipse.org/content/nodeclipse), [site](http://www.nodeclipse.org))",
+  "main": "app.js",
+  "dependencies": {
+    "highland": "^2.4.0",
+    "ramda": "^0.10.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "cat .\\test.txt | node .\\app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dayoadeyemi/NapoleonDynamite.git"
+  },
+  "keywords": [
+    "Warlight",
+    "AI"
+  ],
+  "author": "Dayo Adeyemi",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dayoadeyemi/NapoleonDynamite/issues"
+  },
+  "homepage": "https://github.com/dayoadeyemi/NapoleonDynamite"
+}
