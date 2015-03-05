@@ -117,11 +117,11 @@ function pick_starting_region (options, state){
 function sr_unownedness(state){
   return R.pipe(
           R.toPairs,
-          R.reject(R.pipe(
+          R.filter(R.pipe(
                   R.prop(1),
                   R.prop('player'),
-                  R.eq(get_bot_name(state))
-          )),//regions not owned by player
+                  R.eq('neutral')
+          )),
           R.map(R.head),
           R.map(get_super_region(state)),
           R.countBy(R.I)
@@ -287,12 +287,18 @@ function attack_transfer(state){
 function place_armies(state){
   var unk = sr_unownedness(state);
   var unknownness = R.compose(R.flip(R.prop)(unk), get_super_region(state));
+  var b_distances = border_distances(state);
   return R.pipe(
     R.always(state.map.regions),
-    R.pick(borders(state)),
     R.mapObj(R.prop('super_region')),
     R.mapObj(R.flip(R.prop)(unk)),
+    R.mapObj(R.ifElse(R.isNil,R.always(0),R.I)),
     R.toPairs,
+    R.filter(R.pipe(
+      R.prop(0),
+      R.flip(R.prop)(b_distances),
+      R.eq(1)
+    )),
     R.filter(R.compose(R.eq(get_bot_name(state)), get_owner(state), R.head)),
     R.sort(function(x, y){
       return x[1]- y[1];
