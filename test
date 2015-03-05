@@ -12,7 +12,7 @@ settings starting_pick_amount 1
 pick_starting_region 10000 7 8 15
 setup_map opponent_starting_regions 15
 settings starting_armies 5
-update_map 15 player1 2 5 neutral 2 6 neutral 2 12 neutral 2 13 neutral 2 14 player1 5
+update_map 15 player1 2 5 neutral 2 6 neutral 2 12 neutral 2 13 neutral 2 13 player1 5 5 player1 5
 opponent_moves
 go place_armies 10000
 go attack/transfer 10000

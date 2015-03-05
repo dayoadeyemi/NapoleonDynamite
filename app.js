@@ -45,7 +45,7 @@ var update_map = R.curry(function (region_id, player, no_armies, _map) {
 });
 
 var get_armies = R.curry(function (state, region_id){
-  return state.map.armies[region_id];
+  return R.has(region_id, state.map.armies) ? state.map.armies[region_id] : 2;
 });
 
 function get_opponent(state){
@@ -76,8 +76,8 @@ function setup_map(setup_option, setup_args, state){
         };
       }), R.fromPairs, collect(2))(setup_args), state);
     case 'neighbors':
-      return R.assocPath('map.neighbors', R.compose(R.unnest, R.values, R.mapObjIndexed(function(xs, y){
-        return R.map(function(x){ return [y, x];}, xs);
+      return R.assocPath('map.neighbors', R.compose(R.unnest, R.unnest, R.values, R.mapObjIndexed(function(xs, y){
+        return R.map(function(x){ return [[y, x], [x, y]];}, xs);
       }), R.mapObj(R.split(',')), R.fromPairs, collect(2))(setup_args), state);
     case 'wastelands':
       return R.assocPath('map.wastelands', setup_args, state);
@@ -98,10 +98,6 @@ function pick_starting_region (options, state){
     R.reject(function(srAdj){
       return srAdj[0] === srAdj[1];
     }),
-    R.map(function(srAdj){
-      return [srAdj, [srAdj[1], srAdj[0]]];
-    }),
-    R.unnest,
     R.countBy(R.head),
     R.toPairs,
     R.filter(function(pair){
@@ -132,45 +128,86 @@ function sr_unownedness(state){
   )(state.map.regions);
 }
 
-function region_neighbors(state){
+var is_my_region = R.curry(function (state, region){
+  return get_owner(state, region) === get_bot_name(state);
+});
+
+function borders(state){
   return R.pipe(
-    R.map(function(x){
-      return [x, [x[1], x[0]]];
-    }),
-    R.unnest,
+    R.filter(R.pipe(
+      R.prop(0),
+      is_my_region(state)
+    )),
     R.reject(R.pipe(
       R.prop(1),
-      get_owner(state),
-      R.eq(get_bot_name(state))
-    )),
-    R.groupBy(R.head),
-    R.mapObj(R.map(R.prop(1)))
+      is_my_region(state)
+    ))
   )(state.map.neighbors);
 }
 
-function region_dangers(state){
+function border_distances(state){
   return R.pipe(
-    region_neighbors,
-    R.mapObj(R.map(get_armies(state))),
-    R.mapObj(R.map(R.ifElse(R.isNil, R.always(0), R.I))),
-    R.mapObj(R.sum)
+    R.always(state.map.regions),
+    R.keys,
+    R.partition(is_my_region(state)),
+    function (S){
+      return dijkstra(S[1], S[0], state.map.neighbors);
+    }
+  )();
+}
+
+function dijkstra(start, rest, adj){
+  var INFINITY = 1/0;
+  var isFinite = R.flip(R.lt)(INFINITY);
+  var initial_distances = R.fromPairs(R.concat(
+    R.map(function(x){return [x, 0]}, start),
+    R.map(function(x){return [x, INFINITY]}, rest)
+  ));
+  var adjMap = R.compose(R.mapObj(R.map(R.prop(1))), R.groupBy(R.prop(0)))(adj);
+
+  function _it(distances){
+    if (R.all(isFinite, R.values(distances))) { return distances; }
+    return _it(R.mapObjIndexed(function(distance, node){
+      if (isFinite(distance)) return distance;
+      return R.pipe(
+        R.always(adjMap),
+        R.prop(node),
+        R.map(R.flip(R.prop)(distances)),
+        R.map(R.add(1)),
+        R.min
+      )();
+    }, distances));
+  }
+  return _it(initial_distances);
+}
+
+function region_bad_neighbors(state){
+  return R.pipe(
+    borders,
+    R.groupBy(R.head),
+    R.mapObj(R.map(R.prop(1)))
   )(state);
 }
 
-function get_armies_for_attack(state, xy){
+var get_armies_for_attack = R.curry(function (state, y){
+    return Math.floor(get_armies(state, y)/0.6/0.84) + 6;
+});
+
+function region_dangers(state){
   return R.pipe(
-    R.map(get_armies(state)),
-    function(x){
-      if (x[1] < 0.7 * x[0]) return Math.floor(x[0]*0.7);
-      return 0;
-    }
-  )(xy);
+    region_bad_neighbors,
+    R.mapObj(R.map(get_armies_for_attack(state))),
+    R.mapObj(R.sum),
+    R.add(1)
+  )(state);
 }
+
 function attack_transfer(state){
   return R.pipe(
-    R.filter(R.compose(
-      R.contains(get_bot_name(state)),
-      R.map(get_owner(state))
+    R.filter(R.pipe(
+      R.prop(0),
+      get_owner(state),
+      R.eq(get_bot_name(state))
     )),
     R.groupBy(function(xy){
       if (get_owner(state, xy[0])=== get_owner(state, xy[1])) {
@@ -178,57 +215,72 @@ function attack_transfer(state){
       }
       return 'attack';
     }),
-    tap('grouped moves options'),
     R.mapObjIndexed(function(adj_list, type){
       if (type==='transfer'){
+        var b_distances = border_distances(state);
         var dangers = region_dangers(state);
         var danger_diff = R.pipe(
-          R.map(R.flip(R.prop)(dangers)), 
+          R.map(R.flip(R.prop)(dangers)),
           R.apply(R.subtract)
         );
+        var diffuse = R.pipe(
+          R.always(adj_list),
+          R.filter(R.pipe(
+            R.map(R.flip(R.prop)(b_distances)),
+            R.apply(R.subtract),
+            R.lt(0)
+          )),
+          R.map(function(xy){
+            return R.concat(xy, [Math.floor(get_armies(state, xy[0])-1), 1000]);//[source_id, target_id, no_armies]
+          })
+        )();
         return R.pipe(
-          R.map(function(srAdj){
-            return [srAdj, [srAdj[1], srAdj[0]]];
-          }),
-          R.unnest,
           R.filter(R.pipe(
             danger_diff,
             R.gte(0)
           )),
           R.map(function(xy){
-            return R.concat(xy, [Math.floor(get_armies(state, xy[0])/2)]);//[source_id, target_id, no_armies]
-          })
+            return R.concat(xy, [Math.floor(get_armies(state, xy[0])*3/2), 1000 + danger_diff(xy)]);//[source_id, target_id, no_armies]
+          }),
+          R.concat(diffuse)
         )(adj_list);
       }
       if (type==='attack'){
         return R.pipe(
-                R.map(function(srAdj){
-                  return [srAdj, [srAdj[1], srAdj[0]]];
-                }),
-                R.unnest,
-                R.filter(R.compose(R.eq(get_bot_name(state)), get_owner(state), R.head)),
-                R.groupBy(R.head),
-                R.mapObj(function(adj_list){
-                  var unk = sr_unownedness(state);
-                  var unknownness = R.compose(R.flip(R.prop)(unk), get_super_region(state));
-                  return R.pipe(
-                    R.map(R.prop(1)),
-                    R.sort(function(x, y){
-                      return unknownness(x)- unknownness(y);
-                    }),
-                    R.head
-                  )(adj_list);
-                }),
-                R.toPairs,
-                R.map(function(xy){
-                  return R.concat(xy, [get_armies_for_attack(state, xy)]);//[source_id, target_id, no_armies]
-                })
-        )(adj_list);
+          R.always(adj_list),
+          // R.groupBy(R.head),
+          // R.mapObj(function(adj_list){
+          //   var unk = sr_unownedness(state);
+          //   var unknownness = R.compose(R.flip(R.prop)(unk), get_super_region(state));
+          //   return R.pipe(
+          //     R.map(R.prop(1)),
+          //     R.sort(function(x, y){
+          //       return unknownness(x)- unknownness(y);
+          //     }),
+          //     R.head
+          //   )(adj_list);
+          // }),
+          // R.toPairs,
+          R.map(function(xy){
+            var necc_armies = get_armies_for_attack(state, xy[1]);
+            return R.concat(xy,  [necc_armies, necc_armies]); //[source_id, target_id, no_armies]
+          }),
+          R.filter(function(move){
+            return move[2] < get_armies(state, move[0]);
+          })
+        )();
       }
     }),
     R.values,
     R.unnest,
-    R.reject(R.compose(R.eq(0), R.prop(2)))
+    R.sort(function(x,y){
+      return x[3]-y[3];
+    }),
+    R.groupBy(R.prop(0)),
+    R.mapObj(R.head),
+    R.values,
+    R.map(R.slice(0, 3)),
+    R.filter(R.compose(R.lt(0), R.prop(2)))
   )(state.map.neighbors); //[[source_id, target_id, no_armies], ...]
 }
 
@@ -236,6 +288,8 @@ function place_armies(state){
   var unk = sr_unownedness(state);
   var unknownness = R.compose(R.flip(R.prop)(unk), get_super_region(state));
   return R.pipe(
+    R.always(state.map.regions),
+    R.pick(borders(state)),
     R.mapObj(R.prop('super_region')),
     R.mapObj(R.flip(R.prop)(unk)),
     R.toPairs,
@@ -247,7 +301,7 @@ function place_armies(state){
     R.map(function(x){
       return [x[0], state.settings.starting_armies];
     })
-  )(state.map.regions)
+  )()
 }
 
 function go(go_command, state){
@@ -302,7 +356,7 @@ _(process.stdin)
   };
 })
 .scan(initState, R.flip(R.call))
-// .map(R.path('map'))
+// .tap(R.compose(tap('map'), R.path('map')))
 .map(R.path('output'))
 .reject(R.isEmpty)
 .each(console.log);
