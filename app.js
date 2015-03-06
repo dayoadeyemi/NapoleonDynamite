@@ -207,10 +207,10 @@ function coordinate_attack(state, armies, target){
   var army_total = R.pipe(
     R.always(armies),
     R.values,
-    R.filter(R.eq(1)),
+    R.reject(R.eq(1)),
     R.sum
   )();
-  if (army_total < necc_armies) return R.map(R.always(0), {});
+  if (army_total < necc_armies) return {};
   else return R.pipe(
     R.always(armies),
     R.toPairs,
@@ -221,8 +221,6 @@ function coordinate_attack(state, armies, target){
     R.mapObj(R.add(1)),
     R.mapObj(Math.floor)
   )();
-  var _adj_list = R.pipe(
-  )()
 }
 
 function attack_transfer(state){
@@ -272,13 +270,16 @@ function attack_transfer(state){
         var coordinated_attacks = R.pipe(
           R.always(adj_list),
           R.groupBy(R.prop(1)),
-          R.mapObj(R.prop(0)),
+          R.mapObj(R.map(R.prop(0))),
           R.toPairs,
           R.reduce(function(memo, elt){
-            var target = elt[0];
             var armies = R.zipObj(elt[1], R.map(R.flip(R.prop)(memo.armies), elt[1]));
             var used_armies = coordinate_attack(state, armies, target);
-            var attacks = R.map(function(source){ return [source, target, used_armies, 0]; }, used_armies);
+            var attacks = R.pipe(
+              R.always(used_armies),
+              R.mapObjIndexed(function(no_armies, source){ return [source, target, no_armies, 0]; }),
+              R.values
+            )();
             return {
               moves: R.concat(memo.moves, attacks),
               armies: R.mapObjIndexed(function(memo_army, region_id){
