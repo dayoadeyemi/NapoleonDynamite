@@ -190,7 +190,7 @@ function region_bad_neighbors(state){
 }
 
 var get_armies_for_attack = R.curry(function (state, y){
-    return Math.floor(get_armies(state, y)/0.6/0.84) + 6;
+    return Math.floor(get_armies(state, y)/0.6/0.84) + get_owner(state, y) === 'neutral' ? 1 : 6;
 });
 
 function region_dangers(state){
@@ -200,6 +200,29 @@ function region_dangers(state){
     R.mapObj(R.sum),
     R.add(1)
   )(state);
+}
+
+function coordinate_attack(state, armies, target){
+  var necc_armies = get_armies_for_attack(state, target);
+  var army_total = R.pipe(
+    R.always(armies),
+    R.values,
+    R.filter(R.eq(1)),
+    R.sum
+  )();
+  if (army_total < necc_armies) return R.map(R.always(0), {});
+  else return R.pipe(
+    R.always(armies),
+    R.toPairs,
+    R.reject(R.pipe(R.prop(1), R.eq(1))),
+    R.fromPairs,
+    R.mapObj(R.multiply(necc_armies)),
+    R.mapObj(R.flip(R.divide)(army_total)),
+    R.mapObj(R.add(1)),
+    R.mapObj(Math.floor)
+  )();
+  var _adj_list = R.pipe(
+  )()
 }
 
 function attack_transfer(state){
@@ -240,13 +263,35 @@ function attack_transfer(state){
             R.gte(0)
           )),
           R.map(function(xy){
-            return R.concat(xy, [Math.floor(get_armies(state, xy[0])*3/2), 1000 + danger_diff(xy)]);//[source_id, target_id, no_armies]
+            return R.concat(xy, [Math.floor(get_armies(state, xy[0])*3/2), 1000 + danger_diff(xy)]); //[source_id, target_id, no_armies, score]
           }),
           R.concat(diffuse)
         )(adj_list);
       }
       if (type==='attack'){
-        return R.pipe(
+        var coordinated_attacks = R.pipe(
+          R.always(adj_list),
+          R.groupBy(R.prop(1)),
+          R.mapObj(R.prop(0)),
+          R.toPairs,
+          R.reduce(function(memo, elt){
+            var target = elt[0];
+            var armies = R.zipObj(elt[1], R.map(R.flip(R.prop)(memo.armies), elt[1]));
+            var used_armies = coordinate_attack(state, armies, target);
+            var attacks = R.map(function(source){ return [source, target, used_armies, 0]; }, used_armies);
+            return {
+              moves: R.concat(memo.moves, attacks),
+              armies: R.mapObjIndexed(function(memo_army, region_id){
+                return memo_army - (used_armies[region_id] || 0);
+              }, memo.armies)
+            }
+          }, {
+            moves: [],
+            armies: state.map.armies,
+          }),
+          R.prop('moves')
+        )();
+        var rudimentary_attacks = R.pipe(
           R.always(adj_list),
           // R.groupBy(R.head),
           // R.mapObj(function(adj_list){
@@ -261,26 +306,28 @@ function attack_transfer(state){
           //   )(adj_list);
           // }),
           // R.toPairs,
-          R.map(function(xy){
-            var necc_armies = get_armies_for_attack(state, xy[1]);
-            return R.concat(xy,  [necc_armies, necc_armies]); //[source_id, target_id, no_armies]
+          R.map(function(adj){
+            var necc_armies = get_armies_for_attack(state, adj[1]);
+            return R.concat(adj,  [Math.floor(necc_armies/2 + get_armies(state, adj[0])/2), necc_armies]); //[source_id, target_id, no_armies, score]
           }),
           R.filter(function(move){
             return move[2] < get_armies(state, move[0]);
           })
         )();
+
+        return R.concat(coordinated_attacks, rudimentary_attacks);
       }
     }),
     R.values,
     R.unnest,
+    R.filter(R.compose(R.lt(0), R.prop(2))),
     R.sort(function(x,y){
       return x[3]-y[3];
     }),
     R.groupBy(R.prop(0)),
     R.mapObj(R.head),
     R.values,
-    R.map(R.slice(0, 3)),
-    R.filter(R.compose(R.lt(0), R.prop(2)))
+    R.map(R.slice(0, 3))
   )(state.map.neighbors); //[[source_id, target_id, no_armies], ...]
 }
 
