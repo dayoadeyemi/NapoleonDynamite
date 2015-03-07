@@ -5,7 +5,8 @@
   "main": "app.js",
   "dependencies": {
     "highland": "^2.4.0",
-    "ramda": "^0.10.0"
+    "ramda": "^0.10.0",
+    "mocha": "latest"
   },
   "devDependencies": {},
   "scripts": {
