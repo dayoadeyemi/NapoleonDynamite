@@ -10,7 +10,7 @@
   },
   "devDependencies": {},
   "scripts": {
-    "test": "cat test/data/test.txt | node app.js"
+    "test": "cat test/data/test.txt | node src/app.js"
   },
   "repository": {
     "type": "git",
