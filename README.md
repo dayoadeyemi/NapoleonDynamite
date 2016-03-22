@@ -1,4 +1,5 @@
 
+[![Build Status](https://travis-ci.org/dayoadeyemi/NapoleonDynamite.svg?branch=master)](https://travis-ci.org/dayoadeyemi/NapoleonDynamite)
 
 # NapoleonDynamite
 
