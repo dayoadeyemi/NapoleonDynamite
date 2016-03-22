@@ -273,6 +273,7 @@ function attack_transfer(state){
           R.mapObj(R.map(R.prop(0))),
           R.toPairs,
           R.reduce(function(memo, elt){
+            var target = elt[0];
             var armies = R.zipObj(elt[1], R.map(R.flip(R.prop)(memo.armies), elt[1]));
             var used_armies = coordinate_attack(state, armies, target);
             var attacks = R.pipe(
